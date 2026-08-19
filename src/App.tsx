@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/react'
 import { useEffect, useState } from 'react'
 import { LiquidGlassScene } from './scene/LiquidGlassScene'
 import { DragSurface } from './components/DragSurface'
@@ -101,6 +102,7 @@ function App() {
 
       <SiteFooter />
       <LoadingScreen progress={progress} visible={loading} />
+      <Analytics />
     </div>
   )
 }
