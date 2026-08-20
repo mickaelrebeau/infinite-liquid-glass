@@ -19,13 +19,16 @@ body,
 #root {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   margin: 0;
   overflow: hidden;
   background: #010208;
+  overscroll-behavior: none;
 }
 
 body {
   user-select: none;
+  touch-action: none;
 }
 
 .app-shell {
@@ -83,6 +86,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 1.1rem 1.4rem;
+  padding-bottom: max(1.1rem, env(safe-area-inset-bottom));
   pointer-events: none;
   color: rgba(255, 255, 255, 0.72);
   font-size: 0.78rem;
@@ -253,12 +257,6 @@ body {
 }
 
 @media (max-width: 768px) {
-  .site-footer {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
   .credits {
     display: none;
   }

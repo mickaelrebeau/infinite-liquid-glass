@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdir, readdir } from 'node:fs/promises'
+import { mkdir, readdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -35,7 +35,8 @@ for (const file of files) {
   const slug = path.basename(file, path.extname(file))
   const input = path.join(sourceDir, file)
   const videoPath = path.join(outDir, `${slug}.mp4`)
-  const posterPath = path.join(outDir, `${slug}.jpg`)
+  const posterPng = path.join(outDir, `${slug}-poster.png`)
+  const posterPath = path.join(outDir, `${slug}.webp`)
 
   console.log(`\n→ ${slug}`)
 
@@ -69,10 +70,13 @@ for (const file of files) {
     videoPath,
     '-frames:v',
     '1',
-    '-q:v',
-    '3',
-    posterPath,
+    '-vf',
+    `scale=${WIDTH}:${HEIGHT}:flags=lanczos`,
+    posterPng,
   ])
+
+  await run('cwebp', ['-quiet', '-q', '80', posterPng, '-o', posterPath])
+  await unlink(posterPng)
 }
 
 console.log('\nEncodage web terminé.')

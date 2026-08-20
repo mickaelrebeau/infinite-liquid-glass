@@ -60,12 +60,6 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
   const activeProjectIndex = useRef<number | null>(null)
   const activeInfiniteCol = useRef<number | null>(null)
   const activeInfiniteRow = useRef<number | null>(null)
-  const pendingProjectIndex = useRef<number | null>(null)
-  const pendingInfiniteCol = useRef<number | null>(null)
-  const pendingInfiniteRow = useRef<number | null>(null)
-  const layoutRef = useRef(layout)
-
-  layoutRef.current = layout
 
   useImperativeHandle(ref, () => groupRef.current as Group)
 
@@ -118,38 +112,22 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
       cached.cover.offsetY,
     )
     activeProjectIndex.current = projectIndex
-    return true
-  }
-
-  const isOffscreenForSwap = () => {
-    const currentLayout = layoutRef.current
-    const position = groupRef.current?.position
-    if (!position) return true
-
-    const marginX = currentLayout.cellWidth * 0.35
-    const marginY = currentLayout.cellHeight * 0.35
-    const halfX = currentLayout.periodX * 0.5 - marginX
-    const halfY = currentLayout.periodY * 0.5 - marginY
-
-    return Math.abs(position.x) > halfX || Math.abs(position.y) > halfY
-  }
-
-  const commitPendingProject = () => {
-    if (pendingProjectIndex.current === null) return
-
-    if (applyProjectIndex(pendingProjectIndex.current)) {
-      activeInfiniteCol.current = pendingInfiniteCol.current
-      activeInfiniteRow.current = pendingInfiniteRow.current
-      pendingProjectIndex.current = null
-      pendingInfiniteCol.current = null
-      pendingInfiniteRow.current = null
+    if (groupRef.current) {
+      groupRef.current.userData.projectIndex = projectIndex
+      groupRef.current.userData.slotIndex = slotIndex
+      groupRef.current.userData.titleHit = cached.titleHit
+      groupRef.current.userData.applyProjectIndex = applyProjectIndex
     }
+    return true
   }
 
   useEffect(() => {
     if (!texturesReady) return
-    const projectIndex = projectIndexRef.current?.[slotIndex] ?? slotIndex
+    const projectIndex = projectIndexRef.current?.[slotIndex]
+    if (projectIndex === undefined) return
     applyProjectIndex(projectIndex)
+    activeInfiniteCol.current = infiniteColRef.current?.[slotIndex] ?? null
+    activeInfiniteRow.current = infiniteRowRef.current?.[slotIndex] ?? null
   }, [texturesReady, slotIndex])
 
   useFrame(() => {
@@ -160,6 +138,7 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
     const infiniteCol = infiniteColRef.current?.[slotIndex]
     const infiniteRow = infiniteRowRef.current?.[slotIndex]
     const projectIndex = projectIndexRef.current?.[slotIndex]
+    const group = groupRef.current
 
     if (
       infiniteCol === undefined ||
@@ -169,27 +148,20 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
       return
     }
 
-    const cellChanged =
-      infiniteCol !== activeInfiniteCol.current ||
-      infiniteRow !== activeInfiniteRow.current
-
-    if (cellChanged) {
-      pendingProjectIndex.current = projectIndex
-      pendingInfiniteCol.current = infiniteCol
-      pendingInfiniteRow.current = infiniteRow
-    }
-
-    if (pendingProjectIndex.current !== null && isOffscreenForSwap()) {
-      commitPendingProject()
-    }
-
-    if (
-      activeProjectIndex.current === null &&
-      pendingProjectIndex.current === null
-    ) {
-      applyProjectIndex(projectIndex)
+    if (typeof group?.userData.forceProjectIndex === 'number') {
+      applyProjectIndex(group.userData.forceProjectIndex)
       activeInfiniteCol.current = infiniteCol
       activeInfiniteRow.current = infiniteRow
+      delete group.userData.forceProjectIndex
+    } else if (
+      infiniteCol !== activeInfiniteCol.current ||
+      infiniteRow !== activeInfiniteRow.current ||
+      projectIndex !== activeProjectIndex.current
+    ) {
+      if (applyProjectIndex(projectIndex)) {
+        activeInfiniteCol.current = infiniteCol
+        activeInfiniteRow.current = infiniteRow
+      }
     }
 
     const visualScale = visualScaleRef.current?.[slotIndex] ?? 1
@@ -206,11 +178,12 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
     text.planeSize.value.set(planeWidth, planeHeight)
     text.cornerRadius.value = glassSettings.cornerRadius * planeWidth
 
-    if (groupRef.current && activeProjectIndex.current !== null) {
+    if (group && activeProjectIndex.current !== null) {
       const cached = getCachedProjectTextures(activeProjectIndex.current)
-      groupRef.current.userData.projectIndex = activeProjectIndex.current
-      groupRef.current.userData.slotIndex = slotIndex
-      groupRef.current.userData.titleHit = cached?.titleHit
+      group.userData.projectIndex = activeProjectIndex.current
+      group.userData.slotIndex = slotIndex
+      group.userData.titleHit = cached?.titleHit
+      group.userData.applyProjectIndex = applyProjectIndex
       if (cached && glass.cardMap.value !== cached.image) {
         applyProjectIndex(activeProjectIndex.current)
       }

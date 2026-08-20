@@ -106,6 +106,85 @@ export function wrapScroll(value: number, period: number) {
   return (((value + half) % period) + period) % period - half
 }
 
+export function wrappedDelta(current: number, target: number, period: number) {
+  if (period <= 0) return target - current
+  let delta = target - current
+  delta -= period * Math.round(delta / period)
+  return delta
+}
+
+export type GridScrollSnapshot = {
+  offsetX: number
+  offsetY: number
+  infiniteCol: number
+  infiniteRow: number
+  localX?: number
+  localY?: number
+  cellWidth?: number
+  cellHeight?: number
+}
+
+export function restoreGridScroll(
+  layout: GridLayout,
+  snapshot: GridScrollSnapshot,
+) {
+  const scaleX =
+    snapshot.cellWidth && snapshot.cellWidth > 0
+      ? layout.cellWidth / snapshot.cellWidth
+      : 1
+  const scaleY =
+    snapshot.cellHeight && snapshot.cellHeight > 0
+      ? layout.cellHeight / snapshot.cellHeight
+      : 1
+
+  let scrollX = snapshot.offsetX * scaleX
+  let scrollY = snapshot.offsetY * scaleY
+  const desiredX =
+    typeof snapshot.localX === 'number' &&
+    snapshot.cellWidth &&
+    snapshot.cellWidth > 0
+      ? snapshot.localX * scaleX
+      : null
+  const desiredY =
+    typeof snapshot.localY === 'number' &&
+    snapshot.cellHeight &&
+    snapshot.cellHeight > 0
+      ? snapshot.localY * scaleY
+      : null
+
+  const findCell = () =>
+    buildGridCells(layout, scrollX, scrollY, 1).find(
+      (cell) =>
+        cell.infiniteCol === snapshot.infiniteCol &&
+        cell.infiniteRow === snapshot.infiniteRow,
+    )
+
+  let cell = findCell()
+  if (!cell) {
+    const colCenter = (layout.cols - 1) / 2
+    const rowCenter = (layout.rows - 1) / 2
+    const slotCol = Math.round(colCenter)
+    const slotRow = Math.round(rowCenter)
+    scrollX =
+      (snapshot.infiniteCol - slotCol + colCenter + 0.5) * layout.cellWidth
+    scrollY =
+      (-(slotRow - rowCenter) - snapshot.infiniteRow - 0.5) *
+      layout.cellHeight
+    cell = findCell()
+  }
+
+  if (cell && desiredX !== null && desiredY !== null) {
+    for (let pass = 0; pass < 2; pass += 1) {
+      scrollX += wrappedDelta(cell.position.x, desiredX, layout.periodX)
+      scrollY -= wrappedDelta(cell.position.y, desiredY, layout.periodY)
+      cell = findCell()
+      if (!cell) break
+    }
+  }
+
+  return { x: scrollX, y: scrollY }
+}
+
 export function computeGridLayout(
   viewportWidth: number,
   viewportHeight: number,
@@ -116,11 +195,7 @@ export function computeGridLayout(
   const viewportScale = Math.max(width, height) / gridSettings.referenceWidth
   const perspective = gridSettings.perspective * viewportScale
   const sphereRadius = gridSettings.sphereRadius * viewportScale
-  const widthRatio = height > width
-    ? gridSettings.planeWidthRatioPortrait
-    : gridSettings.planeWidthRatio
-
-  const planeWidth = width * widthRatio
+  const planeWidth = width * gridSettings.planeWidthRatio
   const planeHeight = planeWidth / gridSettings.planeAspect
   const cellWidth = planeWidth * (1 + gapRatio)
   const cellHeight = planeHeight * (1 + gapRatio)

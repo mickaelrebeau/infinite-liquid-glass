@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import {
   useMotionValue,
   useSpring,
@@ -15,11 +15,15 @@ export type DragState = {
   velocityMagnitude: MotionValue<number>
   onPan: (_event: PointerEvent, info: PanInfo) => void
   onPanEnd: (_event: PointerEvent, info: PanInfo) => void
+  jumpTo: (x: number, y: number) => void
 }
 
-export function useInfiniteDrag(reducedMotion = false): DragState {
-  const targetX = useMotionValue(0)
-  const targetY = useMotionValue(0)
+export function useInfiniteDrag(
+  reducedMotion = false,
+  initialOffset?: { x: number; y: number },
+): DragState {
+  const targetX = useMotionValue(initialOffset?.x ?? 0)
+  const targetY = useMotionValue(initialOffset?.y ?? 0)
   const velocityX = useMotionValue(0)
   const velocityY = useMotionValue(0)
   const velocityMagTarget = useMotionValue(0)
@@ -52,6 +56,34 @@ export function useInfiniteDrag(reducedMotion = false): DragState {
     updateVelocity(info.velocity.x, info.velocity.y)
   }
 
+  const jumpTo = useCallback((x: number, y: number) => {
+    snapMotion(offsetX, x)
+    snapMotion(offsetY, y)
+    snapMotion(targetX, x)
+    snapMotion(targetY, y)
+    snapMotion(velocityX, 0)
+    snapMotion(velocityY, 0)
+    snapMotion(velocityMagTarget, 0)
+    snapMotion(velocityMagnitude, 0)
+  }, [
+    offsetX,
+    offsetY,
+    targetX,
+    targetY,
+    velocityMagTarget,
+    velocityMagnitude,
+    velocityX,
+    velocityY,
+  ])
+
+  const didSnapInitial = useRef(false)
+
+  useLayoutEffect(() => {
+    if (!initialOffset || didSnapInitial.current) return
+    didSnapInitial.current = true
+    jumpTo(initialOffset.x, initialOffset.y)
+  }, [initialOffset, jumpTo])
+
   useEffect(() => {
     const syncMagnitude = () => {
       velocityMagTarget.set(
@@ -76,5 +108,17 @@ export function useInfiniteDrag(reducedMotion = false): DragState {
     velocityMagnitude,
     onPan,
     onPanEnd,
+    jumpTo,
   }
+}
+
+function snapMotion(value: MotionValue<number>, next: number) {
+  const jumpy = value as MotionValue<number> & {
+    jump?: (value: number) => void
+  }
+  if (typeof jumpy.jump === 'function') {
+    jumpy.jump(next)
+    return
+  }
+  value.set(next)
 }

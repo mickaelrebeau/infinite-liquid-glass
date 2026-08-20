@@ -17,8 +17,11 @@ import {
   buildGridCells,
   computeCardVisualScale,
   computeGridLayout,
+  restoreGridScroll,
+  type GridCell,
   type GridLayout,
 } from './gridMath'
+import { projectIndexForInfiniteCell } from './projectAssignment'
 import { loadEnvironmentMap } from './loadEnvironmentMap'
 import {
   getCachedProjectTextures,
@@ -28,6 +31,7 @@ import {
 import { isTitleHit, type TitleHitRect } from './createCardTexture'
 import { GlassCard } from './GlassCard'
 import { StarryBackground } from './StarryBackground'
+import type { DivePickMeta, DiveSession } from './diveSession'
 import type { Project } from '../data/projects'
 
 export type PointerClick = {
@@ -45,10 +49,14 @@ type GlassGridProps = {
   pointerX: MotionValue<number>
   pointerY: MotionValue<number>
   clickRequest?: PointerClick | null
+  reverseSession?: DiveSession | null
   diving?: boolean
   reducedMotion?: boolean
-  onProjectPick?: (project: Project) => void
+  onProjectPick?: (project: Project, meta: DivePickMeta) => void
+  onRestoreOffset?: (x: number, y: number) => void
   onDiveComplete?: (project: Project) => void
+  onReverseStart?: () => void
+  onReverseComplete?: () => void
   onTitleHover?: (hovered: boolean) => void
 }
 
@@ -60,9 +68,9 @@ type DiveState = {
   startLook: Vector3
   targetLook: Vector3
   elapsed: number
+  direction: 1 | -1
 }
 
-const DIVE_DURATION = 1.15
 const lookTarget = new Vector3()
 const worldPos = new Vector3()
 const ndc = new Vector2()
@@ -75,10 +83,14 @@ export function GlassGrid({
   pointerX,
   pointerY,
   clickRequest = null,
+  reverseSession = null,
   diving = false,
   reducedMotion = false,
   onProjectPick,
+  onRestoreOffset,
   onDiveComplete,
+  onReverseStart,
+  onReverseComplete,
   onTitleHover,
 }: GlassGridProps) {
   const { size, camera } = useThree()
@@ -88,10 +100,25 @@ export function GlassGrid({
   const infiniteColRef = useRef<number[]>([])
   const infiniteRowRef = useRef<number[]>([])
   const visualScaleRef = useRef<number[]>([])
+  const stickyColRef = useRef<number[]>([])
+  const stickyRowRef = useRef<number[]>([])
+  const lastLocalXRef = useRef<number[]>([])
+  const lastLocalYRef = useRef<number[]>([])
+  const poolKeyRef = useRef('')
   const layoutCache = useRef<GridLayout | null>(null)
   const tiltRef = useRef({ x: 0, y: 0 })
   const diveRef = useRef<DiveState | null>(null)
   const completedRef = useRef(false)
+  const reverseArmedRef = useRef(false)
+  const restoreScrollRef = useRef<{ x: number; y: number } | null>(
+    reverseSession
+      ? { x: reverseSession.offsetX, y: reverseSession.offsetY }
+      : null,
+  )
+  const restoreAppliedRef = useRef(false)
+  const restoreLayoutKeyRef = useRef('')
+  const lastViewportKeyRef = useRef('')
+  const stableLayoutFramesRef = useRef(0)
   const titleHoverRef = useRef(false)
   const [envMap, setEnvMap] = useState<Texture | null>(null)
   const [texturesReady, setTexturesReady] = useState(false)
@@ -130,7 +157,60 @@ export function GlassGrid({
   }, [layout.planeAspect])
 
   useEffect(() => {
-    if (!clickRequest || diveRef.current) return
+    if (!reverseSession) {
+      restoreScrollRef.current = null
+      restoreAppliedRef.current = false
+      reverseArmedRef.current = false
+      return
+    }
+
+    restoreScrollRef.current = {
+      x: reverseSession.offsetX,
+      y: reverseSession.offsetY,
+    }
+    restoreAppliedRef.current = false
+    restoreLayoutKeyRef.current = ''
+    lastViewportKeyRef.current = ''
+    stableLayoutFramesRef.current = 0
+  }, [reverseSession])
+
+  useEffect(() => {
+    reverseArmedRef.current = Boolean(
+      reverseSession &&
+        envMap &&
+        texturesReady &&
+        !diveRef.current &&
+        !reducedMotion,
+    )
+  }, [envMap, reducedMotion, reverseSession, texturesReady])
+
+  useEffect(() => {
+    if (!reverseSession || !reducedMotion || !envMap || !texturesReady) return
+    if (completedRef.current) return
+    if (size.width < 64 || size.height < 64) return
+
+    const restored = restoreGridScroll(layout, reverseSession)
+    restoreScrollRef.current = restored
+    restoreAppliedRef.current = true
+    onRestoreOffset?.(restored.x, restored.y)
+    completedRef.current = true
+    onReverseStart?.()
+    onReverseComplete?.()
+  }, [
+    envMap,
+    layout,
+    onRestoreOffset,
+    onReverseComplete,
+    onReverseStart,
+    reducedMotion,
+    reverseSession,
+    size.height,
+    size.width,
+    texturesReady,
+  ])
+
+  useEffect(() => {
+    if (!clickRequest || diveRef.current || reverseSession) return
     if (velocityMagnitude.get() > interactionSettings.clickMaxVelocity) return
 
     const originHit = hitTitleAt(
@@ -159,8 +239,25 @@ export function GlassGrid({
 
     const { group, projectIndex, slotIndex } = endHit
     const project = getProjectByIndex(projectIndex)
+    const infiniteCol =
+      typeof group.userData.infiniteCol === 'number'
+        ? group.userData.infiniteCol
+        : (infiniteColRef.current[slotIndex] ?? 0)
+    const infiniteRow =
+      typeof group.userData.infiniteRow === 'number'
+        ? group.userData.infiniteRow
+        : (infiniteRowRef.current[slotIndex] ?? 0)
 
-    onProjectPick?.(project)
+    onProjectPick?.(project, {
+      infiniteCol,
+      infiniteRow,
+      offsetX: offsetX.get(),
+      offsetY: offsetY.get(),
+      localX: group.position.x,
+      localY: group.position.y,
+      cellWidth: layout.cellWidth,
+      cellHeight: layout.cellHeight,
+    })
 
     if (reducedMotion) {
       onDiveComplete?.(project)
@@ -183,20 +280,249 @@ export function GlassGrid({
       startLook: new Vector3(0, 0, 0),
       targetLook: worldPos.clone(),
       elapsed: 0,
+      direction: 1,
     }
     completedRef.current = false
-  }, [clickRequest, camera, layout.planeHeight, onDiveComplete, onProjectPick, reducedMotion, size, velocityMagnitude])
+  }, [clickRequest, camera, layout, offsetX, offsetY, onDiveComplete, onProjectPick, reducedMotion, reverseSession, size, velocityMagnitude])
+
+  const applyRestoredScroll = () => {
+    if (!reverseSession) return
+    if (size.width < 64 || size.height < 64) return
+
+    const layoutKey = `${layout.cols}x${layout.rows}:${layout.cellWidth.toFixed(3)}x${layout.cellHeight.toFixed(3)}`
+    if (restoreAppliedRef.current && restoreLayoutKeyRef.current === layoutKey) {
+      return
+    }
+
+    const restored = restoreGridScroll(layout, reverseSession)
+    restoreScrollRef.current = restored
+    restoreAppliedRef.current = true
+    restoreLayoutKeyRef.current = layoutKey
+    poolKeyRef.current = ''
+    stickyColRef.current = []
+    stickyRowRef.current = []
+    lastLocalXRef.current = []
+    lastLocalYRef.current = []
+    onRestoreOffset?.(restored.x, restored.y)
+  }
+
+  const layoutCards = () => {
+    applyRestoredScroll()
+    const scroll = restoreScrollRef.current
+    const cells = buildGridCells(
+      layout,
+      scroll?.x ?? offsetX.get(),
+      scroll?.y ?? offsetY.get(),
+      projects.length,
+    )
+
+    const poolKey = `${layout.cols}x${layout.rows}:${layout.cellWidth.toFixed(2)}x${layout.cellHeight.toFixed(2)}`
+    if (poolKeyRef.current !== poolKey) {
+      poolKeyRef.current = poolKey
+      stickyColRef.current = []
+      stickyRowRef.current = []
+      lastLocalXRef.current = []
+      lastLocalYRef.current = []
+    }
+
+    recycleStickyIdentities(
+      cells,
+      layout,
+      stickyColRef.current,
+      stickyRowRef.current,
+      lastLocalXRef.current,
+      lastLocalYRef.current,
+    )
+
+    cells.forEach((cell, index) => {
+      const infiniteCol = stickyColRef.current[index]
+      const infiniteRow = stickyRowRef.current[index]
+      const projectIndex = projectIndexForInfiniteCell(
+        infiniteCol,
+        infiniteRow,
+        projects.length,
+      )
+      projectIndexRef.current[index] = projectIndex
+      infiniteColRef.current[index] = infiniteCol
+      infiniteRowRef.current[index] = infiniteRow
+
+      const group = groupRefs.current[index]
+      if (!group) return
+      group.position.copy(cell.position)
+      group.quaternion.identity()
+      delete group.userData.diveOriginZ
+      group.userData.infiniteCol = infiniteCol
+      group.userData.infiniteRow = infiniteRow
+      group.userData.projectIndex = projectIndex
+
+      const visualScale = computeCardVisualScale(
+        cell.position.x,
+        cell.position.y,
+        layout,
+      )
+      visualScaleRef.current[index] = visualScale
+      group.scale.set(
+        layout.planeWidth * visualScale,
+        layout.planeHeight * visualScale,
+        1,
+      )
+    })
+  }
+
+  const beginReverseDive = (session: DiveSession) => {
+    if (size.width < 64 || size.height < 64) return false
+
+    applyRestoredScroll()
+    layoutCards()
+
+    const projectIndex =
+      session.projectIndex >= 0
+        ? session.projectIndex
+        : projects.findIndex((project) => project.id === session.projectId)
+    if (projectIndex < 0) return false
+
+    let slotIndex = groupRefs.current.findIndex(
+      (_, index) =>
+        infiniteColRef.current[index] === session.infiniteCol &&
+        infiniteRowRef.current[index] === session.infiniteRow &&
+        projectIndexRef.current[index] === projectIndex,
+    )
+
+    if (slotIndex < 0) {
+      const scaleX =
+        session.cellWidth && session.cellWidth > 0
+          ? layout.cellWidth / session.cellWidth
+          : 1
+      const scaleY =
+        session.cellHeight && session.cellHeight > 0
+          ? layout.cellHeight / session.cellHeight
+          : 1
+      const targetX = (session.localX ?? 0) * scaleX
+      const targetY = (session.localY ?? 0) * scaleY
+      let best = Infinity
+      groupRefs.current.forEach((group, index) => {
+        if (!group || projectIndexRef.current[index] !== projectIndex) return
+        const dx = group.position.x - targetX
+        const dy = group.position.y - targetY
+        const dist = dx * dx + dy * dy
+        if (dist < best) {
+          best = dist
+          slotIndex = index
+        }
+      })
+    }
+
+    const group = slotIndex >= 0 ? groupRefs.current[slotIndex] : null
+    if (!group) return false
+
+    const applyProject = group.userData.applyProjectIndex as
+      | ((index: number) => boolean)
+      | undefined
+    applyProject?.(projectIndex)
+    group.userData.forceProjectIndex = projectIndex
+    group.userData.projectIndex = projectIndex
+
+    group.updateWorldMatrix(true, false)
+    group.getWorldPosition(worldPos)
+
+    const startCam = new Vector3(0, 0, layout.perspective)
+    const toward = startCam.clone().sub(worldPos).normalize()
+    const fillDistance = Math.max(layout.planeHeight * 0.78, 360)
+
+    if (camera instanceof PerspectiveCamera) {
+      camera.fov = MathUtils.radToDeg(
+        2 * Math.atan(size.height / 2 / layout.perspective),
+      )
+      camera.aspect = size.width / Math.max(size.height, 1)
+      camera.near = 24
+      camera.far = layout.perspective * 8
+      camera.updateProjectionMatrix()
+    }
+
+    diveRef.current = {
+      project: getProjectByIndex(projectIndex),
+      slotIndex,
+      startCam,
+      targetCam: worldPos.clone().add(toward.multiplyScalar(fillDistance)),
+      startLook: new Vector3(0, 0, 0),
+      targetLook: worldPos.clone(),
+      elapsed: 0,
+      direction: -1,
+    }
+    completedRef.current = false
+    tiltRef.current.x = 0
+    tiltRef.current.y = 0
+    return true
+  }
+
+  const applyDivePose = (ease: number) => {
+    const dive = diveRef.current
+    if (!dive) return
+
+    if (surfaceRigRef.current) {
+      surfaceRigRef.current.rotation.x = tiltRef.current.x * (1 - ease)
+      surfaceRigRef.current.rotation.y = tiltRef.current.y * (1 - ease)
+    }
+
+    camera.position.lerpVectors(dive.startCam, dive.targetCam, ease)
+    lookTarget.lerpVectors(dive.startLook, dive.targetLook, ease)
+    camera.lookAt(lookTarget)
+    camera.updateMatrixWorld()
+
+    groupRefs.current.forEach((group, index) => {
+      if (!group) return
+      if (group.userData.diveOriginZ === undefined) {
+        group.userData.diveOriginZ = group.position.z
+      }
+      if (index === dive.slotIndex) {
+        const grow = 1 + ease * 0.22
+        group.scale.set(
+          layout.planeWidth * grow,
+          layout.planeHeight * grow,
+          1,
+        )
+        return
+      }
+      const shrink = Math.max(0.08, 1 - ease * 0.92)
+      group.scale.set(
+        layout.planeWidth * shrink,
+        layout.planeHeight * shrink,
+        1,
+      )
+      group.position.z = group.userData.diveOriginZ - ease * 160
+    })
+  }
 
   useFrame((_, delta) => {
     const dive = diveRef.current
 
     if (!dive) {
-      const cells = buildGridCells(
-        layout,
-        offsetX.get(),
-        offsetY.get(),
-        projects.length,
-      )
+      const viewportKey = `${size.width}x${size.height}:${layout.cols}x${layout.rows}`
+      if (viewportKey !== lastViewportKeyRef.current) {
+        lastViewportKeyRef.current = viewportKey
+        stableLayoutFramesRef.current = 0
+      } else {
+        stableLayoutFramesRef.current += 1
+      }
+
+      layoutCards()
+
+      if (
+        reverseArmedRef.current &&
+        reverseSession &&
+        !reducedMotion &&
+        size.width >= 64 &&
+        size.height >= 64 &&
+        stableLayoutFramesRef.current >= 2 &&
+        beginReverseDive(reverseSession)
+      ) {
+        reverseArmedRef.current = false
+        onReverseStart?.()
+        applyDivePose(1)
+        return
+      }
+
+      if (reverseSession) return
 
       const velocity = velocityMagnitude.get()
       const zoom =
@@ -242,29 +568,6 @@ export function GlassGrid({
         camera.updateMatrixWorld()
       }
 
-      cells.forEach((cell, index) => {
-        projectIndexRef.current[index] = cell.projectIndex
-        infiniteColRef.current[index] = cell.infiniteCol
-        infiniteRowRef.current[index] = cell.infiniteRow
-
-        const group = groupRefs.current[index]
-        if (!group) return
-        group.position.copy(cell.position)
-        group.quaternion.identity()
-
-        const visualScale = computeCardVisualScale(
-          cell.position.x,
-          cell.position.y,
-          layout,
-        )
-        visualScaleRef.current[index] = visualScale
-        group.scale.set(
-          layout.planeWidth * visualScale,
-          layout.planeHeight * visualScale,
-          1,
-        )
-      })
-
       ndc.set(pointerNormX, -pointerNormY)
       raycaster.setFromCamera(ndc, camera)
       const hoverHits = raycaster.intersectObjects(
@@ -291,51 +594,43 @@ export function GlassGrid({
     }
 
     dive.elapsed += delta
-    const t = Math.min(1, dive.elapsed / DIVE_DURATION)
-    const ease = t * t * t
-
-    if (surfaceRigRef.current) {
-      surfaceRigRef.current.rotation.x = tiltRef.current.x * (1 - ease)
-      surfaceRigRef.current.rotation.y = tiltRef.current.y * (1 - ease)
-    }
-
-    camera.position.lerpVectors(dive.startCam, dive.targetCam, ease)
-    lookTarget.lerpVectors(dive.startLook, dive.targetLook, ease)
-    camera.lookAt(lookTarget)
-    camera.updateMatrixWorld()
-
-    groupRefs.current.forEach((group, index) => {
-      if (!group) return
-      if (group.userData.diveOriginZ === undefined) {
-        group.userData.diveOriginZ = group.position.z
-      }
-      if (index === dive.slotIndex) {
-        const grow = 1 + ease * 0.22
-        group.scale.set(
-          layout.planeWidth * grow,
-          layout.planeHeight * grow,
-          1,
-        )
-        return
-      }
-      const shrink = Math.max(0.08, 1 - ease * 0.92)
-      group.scale.set(
-        layout.planeWidth * shrink,
-        layout.planeHeight * shrink,
-        1,
-      )
-      group.position.z = group.userData.diveOriginZ - ease * 160
-    })
+    const hold = dive.direction === -1 ? 0.38 : 0
+    const playElapsed = Math.max(0, dive.elapsed - hold)
+    const t = Math.min(1, playElapsed / interactionSettings.diveDuration)
+    const forwardT = dive.direction === 1 ? t : 1 - t
+    const ease = forwardT * forwardT * forwardT
+    applyDivePose(ease)
 
     if (t >= 1 && !completedRef.current) {
       completedRef.current = true
-      onDiveComplete?.(dive.project)
+      if (dive.direction === 1) {
+        onDiveComplete?.(dive.project)
+        return
+      }
+
+      diveRef.current = null
+      layoutCache.current = null
+      groupRefs.current.forEach((group) => {
+        if (group) delete group.userData.diveOriginZ
+      })
+      if (camera instanceof PerspectiveCamera) {
+        camera.near = layout.perspective * 0.25
+        camera.far = layout.perspective * 8
+        camera.updateProjectionMatrix()
+      }
+      if (restoreScrollRef.current) {
+        onRestoreOffset?.(
+          restoreScrollRef.current.x,
+          restoreScrollRef.current.y,
+        )
+      }
+      onReverseComplete?.()
     }
   })
 
   return (
     <>
-      <StarryBackground reducedMotion={reducedMotion || diving} />
+      <StarryBackground reducedMotion={reducedMotion || diving || Boolean(reverseSession)} />
       {envMap ? (
         <group ref={surfaceRigRef} name="glass-surface">
           {Array.from({ length: slotCount }, (_, slotIndex) => (
@@ -397,4 +692,105 @@ function hitTitleAt(
   }
 
   return { group, projectIndex, slotIndex }
+}
+
+function recycleStickyIdentities(
+  cells: GridCell[],
+  layout: GridLayout,
+  stickyCol: number[],
+  stickyRow: number[],
+  lastX: number[],
+  lastY: number[],
+) {
+  const wrapX = layout.periodX * 0.5
+  const wrapY = layout.periodY * 0.5
+
+  cells.forEach((cell, index) => {
+    if (stickyCol[index] === undefined || lastX[index] === undefined) {
+      stickyCol[index] = cell.infiniteCol
+      stickyRow[index] = cell.infiniteRow
+      lastX[index] = cell.position.x
+      lastY[index] = cell.position.y
+    }
+  })
+
+  const yDirByRow: Array<'up' | 'down' | undefined> = []
+  const xWrapped = new Array<boolean>(cells.length).fill(false)
+
+  cells.forEach((cell, index) => {
+    const dx = cell.position.x - lastX[index]
+    const dy = cell.position.y - lastY[index]
+    if (Math.abs(dy) > wrapY) {
+      yDirByRow[cell.row] = dy > 0 ? 'up' : 'down'
+    }
+    if (Math.abs(dx) > wrapX) {
+      xWrapped[index] = true
+    }
+  })
+
+  const wrappedRows = yDirByRow
+    .map((dir, row) => (dir ? row : -1))
+    .filter((row) => row >= 0)
+  if (wrappedRows.length > 0) {
+    const unchanged: number[] = []
+    cells.forEach((_, index) => {
+      if (wrappedRows.includes(Math.floor(index / layout.cols))) return
+      unchanged.push(stickyRow[index])
+    })
+
+    if (unchanged.length === 0) {
+      cells.forEach((cell, index) => {
+        stickyRow[index] = cell.infiniteRow
+      })
+    } else {
+      let upCursor = Math.max(...unchanged)
+      let downCursor = Math.min(...unchanged)
+      wrappedRows.forEach((slotRow) => {
+        const next =
+          yDirByRow[slotRow] === 'up' ? (upCursor += 1) : (downCursor -= 1)
+        for (let col = 0; col < layout.cols; col += 1) {
+          stickyRow[slotRow * layout.cols + col] = next
+        }
+      })
+    }
+  }
+
+  for (let slotRow = 0; slotRow < layout.rows; slotRow += 1) {
+    const rowStart = slotRow * layout.cols
+    const wrappedInRow: number[] = []
+    for (let col = 0; col < layout.cols; col += 1) {
+      const index = rowStart + col
+      if (xWrapped[index]) wrappedInRow.push(index)
+    }
+
+    if (wrappedInRow.length === 0) continue
+
+    if (wrappedInRow.length > 1) {
+      for (let col = 0; col < layout.cols; col += 1) {
+        const index = rowStart + col
+        stickyCol[index] = cells[index].infiniteCol
+      }
+      continue
+    }
+
+    const index = wrappedInRow[0]
+    const others: number[] = []
+    for (let col = 0; col < layout.cols; col += 1) {
+      const other = rowStart + col
+      if (other === index) continue
+      others.push(stickyCol[other])
+    }
+    if (others.length === 0) {
+      stickyCol[index] = cells[index].infiniteCol
+      continue
+    }
+    const dx = cells[index].position.x - lastX[index]
+    stickyCol[index] =
+      dx < 0 ? Math.min(...others) - 1 : Math.max(...others) + 1
+  }
+
+  cells.forEach((cell, index) => {
+    lastX[index] = cell.position.x
+    lastY[index] = cell.position.y
+  })
 }

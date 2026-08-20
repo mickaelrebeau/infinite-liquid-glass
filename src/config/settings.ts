@@ -28,7 +28,6 @@ export const gridSettings = {
   sphereRadius: 5000,
   planeAspect: 4 / 3,
   planeWidthRatio: 0.351,
-  planeWidthRatioPortrait: 0.665,
   gapRatio: 0.048,
   referenceWidth: 1728,
   coverageMargin: 1.12,
@@ -44,6 +43,7 @@ export const interactionSettings = {
   tapMaxDistance: 14,
   postDragCooldownMs: 360,
   clickMaxVelocity: 140,
+  diveDuration: 1.15,
 } as const
 
 export const dragSettings = {

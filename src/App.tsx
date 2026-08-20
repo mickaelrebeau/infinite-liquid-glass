@@ -12,22 +12,44 @@ import {
   usePrefersReducedMotion,
   useWebGPUSupport,
 } from './hooks/useWebGPUSupport'
-import { unlockProjectVideos } from './scene/projectTextureCache'
+import {
+  unlockProjectVideos,
+  disposeProjectTextureCache,
+} from './scene/projectTextureCache'
+import {
+  clearDiveSession,
+  readDiveSession,
+  saveDiveSession,
+  type DivePickMeta,
+} from './scene/diveSession'
 import type { PointerClick } from './scene/GlassGrid'
-import type { Project } from './data/projects'
+import { projects, type Project } from './data/projects'
+
+const initialDive = readDiveSession()
 
 function App() {
   const webgpuSupported = useWebGPUSupport()
   const reducedMotion = usePrefersReducedMotion()
-  const drag = useInfiniteDrag(reducedMotion)
+  const drag = useInfiniteDrag(
+    reducedMotion,
+    initialDive
+      ? { x: initialDive.offsetX, y: initialDive.offsetY }
+      : undefined,
+  )
   const pointerTilt = usePointerTilt(reducedMotion)
-  const [loading, setLoading] = useState(true)
-  const [progress, setProgress] = useState(0)
+  const [reverseSession, setReverseSession] = useState(initialDive)
+  const [loading, setLoading] = useState(!initialDive)
+  const [progress, setProgress] = useState(initialDive ? 100 : 0)
   const [clickRequest, setClickRequest] = useState<PointerClick | null>(null)
-  const [diving, setDiving] = useState(false)
+  const [diving, setDiving] = useState(Boolean(initialDive))
   const [overTitle, setOverTitle] = useState(false)
+  const [sceneEpoch, setSceneEpoch] = useState(0)
+
+  const transitioning = diving || Boolean(reverseSession)
 
   useEffect(() => {
+    if (!loading) return
+
     let frame = 0
     const timer = window.setInterval(() => {
       frame += 1
@@ -39,7 +61,7 @@ function App() {
     }, 120)
 
     return () => window.clearInterval(timer)
-  }, [])
+  }, [loading])
 
   const handleTap = (
     x: number,
@@ -47,18 +69,64 @@ function App() {
     originX: number,
     originY: number,
   ) => {
-    if (diving) return
+    if (transitioning) return
     unlockProjectVideos()
     setClickRequest({ id: Date.now(), x, y, originX, originY })
   }
 
-  const handleProjectPick = (_project: Project) => {
+  const handleProjectPick = (project: Project, meta: DivePickMeta) => {
+    saveDiveSession({
+      projectId: project.id,
+      projectIndex: projects.findIndex((item) => item.id === project.id),
+      ...meta,
+    })
     setDiving(true)
   }
 
   const handleDiveComplete = (project: Project) => {
+    const failSafe = window.setTimeout(() => {
+      setDiving(false)
+    }, 2500)
+
+    const clearFailSafe = () => window.clearTimeout(failSafe)
+    window.addEventListener('pagehide', clearFailSafe, { once: true })
     window.location.assign(project.url)
   }
+
+  const handleReverseStart = () => {
+    setLoading(false)
+    setDiving(false)
+    unlockProjectVideos()
+  }
+
+  const handleReverseComplete = () => {
+    clearDiveSession()
+    setReverseSession(null)
+    setDiving(false)
+  }
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      const saved = readDiveSession()
+      if (saved) {
+        drag.jumpTo(saved.offsetX, saved.offsetY)
+        setReverseSession(saved)
+        setDiving(true)
+        setLoading(false)
+      } else {
+        setDiving(false)
+        setClickRequest(null)
+      }
+
+      if (event.persisted) {
+        disposeProjectTextureCache()
+        setSceneEpoch((value) => value + 1)
+      }
+    }
+
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [drag.jumpTo])
 
   const showExperience = webgpuSupported === true
 
@@ -67,16 +135,21 @@ function App() {
       {showExperience ? (
         <>
           <LiquidGlassScene
+            key={sceneEpoch}
             offsetX={drag.offsetX}
             offsetY={drag.offsetY}
             velocityMagnitude={drag.velocityMagnitude}
             pointerX={pointerTilt.pointerX}
             pointerY={pointerTilt.pointerY}
             clickRequest={clickRequest}
-            diving={diving}
+            reverseSession={reverseSession}
+            diving={transitioning}
             reducedMotion={reducedMotion}
             onProjectPick={handleProjectPick}
+            onRestoreOffset={drag.jumpTo}
             onDiveComplete={handleDiveComplete}
+            onReverseStart={handleReverseStart}
+            onReverseComplete={handleReverseComplete}
             onTitleHover={setOverTitle}
           />
           <DragSurface
@@ -92,9 +165,12 @@ function App() {
               setOverTitle(false)
             }}
             onTap={handleTap}
-            disabled={diving}
+            disabled={transitioning}
           />
-          <DiveOverlay active={diving} />
+          <DiveOverlay
+            active={diving}
+            appearImmediately={Boolean(reverseSession)}
+          />
         </>
       ) : webgpuSupported === false ? (
         <StaticFallback />
