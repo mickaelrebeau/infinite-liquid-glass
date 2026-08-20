@@ -1,4 +1,5 @@
 import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { useEffect, useState } from 'react'
 import { LiquidGlassScene } from './scene/LiquidGlassScene'
 import { DragSurface } from './components/DragSurface'
@@ -171,6 +172,7 @@ function App() {
       <SiteFooter />
       <LoadingScreen visible={loading} />
       <Analytics />
+      <SpeedInsights />
     </div>
   )
 }
