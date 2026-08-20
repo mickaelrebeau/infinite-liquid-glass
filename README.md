@@ -15,21 +15,21 @@ Grille infinie de cartes en verre liquide, textures vidéo des vrais projets, pl
 ## Démarrage
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Build production :
 
 ```bash
-npm run build
-npm run preview
+pnpm build
+pnpm preview
 ```
 
 Lint :
 
 ```bash
-npm run lint
+pnpm lint
 ```
 
 ## URLs utiles
@@ -40,7 +40,7 @@ npm run lint
 | `/?tweak` ou `/?debug` | Affiche le panneau Tweakpane **en production** |
 | `/?demo=liquid-glass` | Scène demo du composant `<LiquidGlass />` (shader expérimental séparé) |
 
-En **développement** (`npm run dev`), le Tweakpane est visible sans paramètre.
+En **développement** (`pnpm dev`), le Tweakpane est visible sans paramètre.
 
 Les réglages Tweakpane sont persistés dans `localStorage` (`ilg-tweaks-v6`).
 
@@ -61,8 +61,8 @@ Les cartes utilisent des scrolls vidéo (`public/videos/*.mp4`) générés depui
 Capturer / régénérer :
 
 ```bash
-npm run videos
-npm run videos:optimize
+pnpm videos
+pnpm videos:optimize
 ```
 
 (Nécessite Playwright — voir `scripts/capture-site-videos.mjs`.)
