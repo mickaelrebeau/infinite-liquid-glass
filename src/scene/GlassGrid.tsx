@@ -17,6 +17,7 @@ import {
   buildGridCells,
   computeCardVisualScale,
   computeGridLayout,
+  isViewportReady,
   restoreGridScroll,
   type GridCell,
   type GridLayout,
@@ -187,7 +188,7 @@ export function GlassGrid({
   useEffect(() => {
     if (!reverseSession || !reducedMotion || !envMap || !texturesReady) return
     if (completedRef.current) return
-    if (size.width < 64 || size.height < 64) return
+    if (!isViewportReady(size)) return
 
     const restored = restoreGridScroll(layout, reverseSession)
     restoreScrollRef.current = restored
@@ -257,6 +258,10 @@ export function GlassGrid({
       localY: group.position.y,
       cellWidth: layout.cellWidth,
       cellHeight: layout.cellHeight,
+      poolCols: layout.cols,
+      poolRows: layout.rows,
+      stickyCols: snapshotStickies(stickyColRef.current, slotCount),
+      stickyRows: snapshotStickies(stickyRowRef.current, slotCount),
     })
 
     if (reducedMotion) {
@@ -287,7 +292,7 @@ export function GlassGrid({
 
   const applyRestoredScroll = () => {
     if (!reverseSession) return
-    if (size.width < 64 || size.height < 64) return
+    if (!isViewportReady(size)) return
 
     const layoutKey = `${layout.cols}x${layout.rows}:${layout.cellWidth.toFixed(3)}x${layout.cellHeight.toFixed(3)}`
     if (restoreAppliedRef.current && restoreLayoutKeyRef.current === layoutKey) {
@@ -298,11 +303,25 @@ export function GlassGrid({
     restoreScrollRef.current = restored
     restoreAppliedRef.current = true
     restoreLayoutKeyRef.current = layoutKey
-    poolKeyRef.current = ''
-    stickyColRef.current = []
-    stickyRowRef.current = []
     lastLocalXRef.current = []
     lastLocalYRef.current = []
+
+    const stickiesMatch =
+      reverseSession.poolCols === layout.cols &&
+      reverseSession.poolRows === layout.rows &&
+      reverseSession.stickyCols?.length === slotCount &&
+      reverseSession.stickyRows?.length === slotCount
+
+    if (stickiesMatch && reverseSession.stickyCols && reverseSession.stickyRows) {
+      stickyColRef.current = reverseSession.stickyCols.slice()
+      stickyRowRef.current = reverseSession.stickyRows.slice()
+      poolKeyRef.current = `${layout.cols}x${layout.rows}:${layout.cellWidth.toFixed(2)}x${layout.cellHeight.toFixed(2)}`
+    } else {
+      poolKeyRef.current = ''
+      stickyColRef.current = []
+      stickyRowRef.current = []
+    }
+
     onRestoreOffset?.(restored.x, restored.y)
   }
 
@@ -370,7 +389,7 @@ export function GlassGrid({
   }
 
   const beginReverseDive = (session: DiveSession) => {
-    if (size.width < 64 || size.height < 64) return false
+    if (!isViewportReady(size)) return false
 
     applyRestoredScroll()
     layoutCards()
@@ -513,6 +532,7 @@ export function GlassGrid({
         !reducedMotion &&
         size.width >= 64 &&
         size.height >= 64 &&
+        isViewportReady(size) &&
         stableLayoutFramesRef.current >= 2 &&
         beginReverseDive(reverseSession)
       ) {
@@ -616,13 +636,21 @@ export function GlassGrid({
       if (camera instanceof PerspectiveCamera) {
         camera.near = layout.perspective * 0.25
         camera.far = layout.perspective * 8
+        camera.position.set(0, 0, layout.perspective)
+        camera.rotation.set(0, 0, 0)
         camera.updateProjectionMatrix()
+        camera.updateMatrixWorld()
       }
       if (restoreScrollRef.current) {
         onRestoreOffset?.(
           restoreScrollRef.current.x,
           restoreScrollRef.current.y,
         )
+      }
+      tiltRef.current.x = 0
+      tiltRef.current.y = 0
+      if (surfaceRigRef.current) {
+        surfaceRigRef.current.rotation.set(0, 0, 0)
       }
       onReverseComplete?.()
     }
@@ -694,6 +722,13 @@ function hitTitleAt(
   return { group, projectIndex, slotIndex }
 }
 
+function snapshotStickies(values: number[], count: number) {
+  if (values.length < count) return []
+  const next = values.slice(0, count)
+  if (next.some((value) => !Number.isFinite(value))) return []
+  return next
+}
+
 function recycleStickyIdentities(
   cells: GridCell[],
   layout: GridLayout,
@@ -706,9 +741,11 @@ function recycleStickyIdentities(
   const wrapY = layout.periodY * 0.5
 
   cells.forEach((cell, index) => {
-    if (stickyCol[index] === undefined || lastX[index] === undefined) {
+    if (stickyCol[index] === undefined) {
       stickyCol[index] = cell.infiniteCol
       stickyRow[index] = cell.infiniteRow
+    }
+    if (lastX[index] === undefined) {
       lastX[index] = cell.position.x
       lastY[index] = cell.position.y
     }

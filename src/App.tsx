@@ -1,6 +1,6 @@
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { LiquidGlassScene } from './scene/LiquidGlassScene'
 import { DragSurface } from './components/DragSurface'
 import { SiteFooter } from './components/SiteFooter'
@@ -66,6 +66,14 @@ function App() {
     unlockProjectVideos()
     setClickRequest({ id: Date.now(), x, y, originX, originY })
   }
+
+  const handleWheel = useCallback(
+    (event: WheelEvent) => {
+      unlockProjectVideos()
+      drag.onWheel(event)
+    },
+    [drag.onWheel],
+  )
 
   const handleProjectPick = (project: Project, meta: DivePickMeta) => {
     saveDiveSession({
@@ -152,6 +160,7 @@ function App() {
               drag.onPan(event, info)
             }}
             onPanEnd={drag.onPanEnd}
+            onWheel={handleWheel}
             onPointerMove={pointerTilt.onPointerMove}
             onPointerLeave={() => {
               pointerTilt.onPointerLeave()

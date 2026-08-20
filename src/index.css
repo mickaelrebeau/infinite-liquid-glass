@@ -53,6 +53,7 @@ body {
   z-index: 10;
   touch-action: none;
   cursor: grab;
+  overscroll-behavior: none;
 }
 
 .drag-surface.is-over-title {

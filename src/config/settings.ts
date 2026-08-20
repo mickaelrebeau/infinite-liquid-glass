@@ -27,7 +27,7 @@ export const gridSettings = {
   perspective: 1200,
   sphereRadius: 5000,
   planeAspect: 4 / 3,
-  planeWidthRatio: 0.351,
+  planeWidthRatio: 0.318,
   gapRatio: 0.048,
   referenceWidth: 1728,
   coverageMargin: 1.12,
@@ -48,6 +48,8 @@ export const interactionSettings = {
 
 export const dragSettings = {
   dragRatio: 1.5,
+  wheelRatio: 1.2,
+  wheelLineScale: 16,
   fling: 0.1,
   spring: {
     stiffness: 100,
@@ -63,8 +65,8 @@ export const dragSettings = {
 } as const
 
 export const tiltSettings = {
-  maxPitch: 0.11,
-  maxYaw: 0.11,
+  maxPitch: 0.06,
+  maxYaw: 0.06,
   smoothing: 0.12,
   pointerSpring: {
     stiffness: 110,

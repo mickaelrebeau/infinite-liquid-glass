@@ -15,6 +15,7 @@ export type DragState = {
   velocityMagnitude: MotionValue<number>
   onPan: (_event: PointerEvent, info: PanInfo) => void
   onPanEnd: (_event: PointerEvent, info: PanInfo) => void
+  onWheel: (event: WheelEvent) => void
   jumpTo: (x: number, y: number) => void
 }
 
@@ -56,11 +57,47 @@ export function useInfiniteDrag(
     updateVelocity(info.velocity.x, info.velocity.y)
   }
 
+  const lastWheelAt = useRef(0)
+
+  const onWheel = useCallback(
+    (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) return
+
+      event.preventDefault()
+
+      let dx = event.deltaX
+      let dy = event.deltaY
+      if (event.shiftKey && dx === 0) {
+        dx = dy
+        dy = 0
+      }
+      if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+        dx *= dragSettings.wheelLineScale
+        dy *= dragSettings.wheelLineScale
+      } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+        dx *= window.innerWidth
+        dy *= window.innerHeight
+      }
+
+      const ratio = reducedMotion ? 1 : dragSettings.wheelRatio
+      const nextX = -dx * ratio
+      const nextY = -dy * ratio
+      targetX.set(targetX.get() + nextX)
+      targetY.set(targetY.get() + nextY)
+
+      const now = performance.now()
+      const dt = Math.max((now - lastWheelAt.current) / 1000, 1 / 120)
+      lastWheelAt.current = now
+      updateVelocity(nextX / dt, nextY / dt)
+    },
+    [reducedMotion, targetX, targetY, velocityMagTarget, velocityX, velocityY],
+  )
+
   const jumpTo = useCallback((x: number, y: number) => {
-    snapMotion(offsetX, x)
-    snapMotion(offsetY, y)
     snapMotion(targetX, x)
     snapMotion(targetY, y)
+    snapMotion(offsetX, x)
+    snapMotion(offsetY, y)
     snapMotion(velocityX, 0)
     snapMotion(velocityY, 0)
     snapMotion(velocityMagTarget, 0)
@@ -108,6 +145,7 @@ export function useInfiniteDrag(
     velocityMagnitude,
     onPan,
     onPanEnd,
+    onWheel,
     jumpTo,
   }
 }

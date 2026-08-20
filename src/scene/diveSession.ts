@@ -11,6 +11,10 @@ export type DivePickMeta = {
   localY: number
   cellWidth: number
   cellHeight: number
+  poolCols: number
+  poolRows: number
+  stickyCols: number[]
+  stickyRows: number[]
 }
 
 export type DiveSession = {
@@ -24,10 +28,20 @@ export type DiveSession = {
   localY?: number
   cellWidth?: number
   cellHeight?: number
+  poolCols?: number
+  poolRows?: number
+  stickyCols?: number[]
+  stickyRows?: number[]
 }
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+function toFiniteNumberArray(value: unknown): number[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  if (!value.every(isFiniteNumber)) return null
+  return value.slice()
 }
 
 export function saveDiveSession(session: DiveSession) {
@@ -57,6 +71,9 @@ export function readDiveSession(): DiveSession | null {
     )
     if (projectIndex < 0) return null
 
+    const stickyCols = toFiniteNumberArray(parsed.stickyCols)
+    const stickyRows = toFiniteNumberArray(parsed.stickyRows)
+
     return {
       projectId: parsed.projectId,
       projectIndex,
@@ -70,6 +87,10 @@ export function readDiveSession(): DiveSession | null {
       ...(isFiniteNumber(parsed.cellHeight)
         ? { cellHeight: parsed.cellHeight }
         : {}),
+      ...(isFiniteNumber(parsed.poolCols) ? { poolCols: parsed.poolCols } : {}),
+      ...(isFiniteNumber(parsed.poolRows) ? { poolRows: parsed.poolRows } : {}),
+      ...(stickyCols ? { stickyCols } : {}),
+      ...(stickyRows ? { stickyRows } : {}),
     }
   } catch {
     return null

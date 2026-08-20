@@ -137,52 +137,27 @@ export function restoreGridScroll(
       ? layout.cellHeight / snapshot.cellHeight
       : 1
 
-  let scrollX = snapshot.offsetX * scaleX
-  let scrollY = snapshot.offsetY * scaleY
-  const desiredX =
-    typeof snapshot.localX === 'number' &&
-    snapshot.cellWidth &&
-    snapshot.cellWidth > 0
-      ? snapshot.localX * scaleX
-      : null
-  const desiredY =
-    typeof snapshot.localY === 'number' &&
-    snapshot.cellHeight &&
-    snapshot.cellHeight > 0
-      ? snapshot.localY * scaleY
-      : null
-
-  const findCell = () =>
-    buildGridCells(layout, scrollX, scrollY, 1).find(
-      (cell) =>
-        cell.infiniteCol === snapshot.infiniteCol &&
-        cell.infiniteRow === snapshot.infiniteRow,
-    )
-
-  let cell = findCell()
-  if (!cell) {
-    const colCenter = (layout.cols - 1) / 2
-    const rowCenter = (layout.rows - 1) / 2
-    const slotCol = Math.round(colCenter)
-    const slotRow = Math.round(rowCenter)
-    scrollX =
-      (snapshot.infiniteCol - slotCol + colCenter + 0.5) * layout.cellWidth
-    scrollY =
-      (-(slotRow - rowCenter) - snapshot.infiniteRow - 0.5) *
-      layout.cellHeight
-    cell = findCell()
+  // Keep the saved pan. Re-placing a sticky identity with wrappedDelta
+  // shifted the whole grid — sticky cols lag geometric cols until wrap.
+  return {
+    x: snapshot.offsetX * scaleX,
+    y: snapshot.offsetY * scaleY,
   }
+}
 
-  if (cell && desiredX !== null && desiredY !== null) {
-    for (let pass = 0; pass < 2; pass += 1) {
-      scrollX += wrappedDelta(cell.position.x, desiredX, layout.periodX)
-      scrollY -= wrappedDelta(cell.position.y, desiredY, layout.periodY)
-      cell = findCell()
-      if (!cell) break
-    }
-  }
+export function isViewportReady(size: { width: number; height: number }) {
+  if (size.width < 64 || size.height < 64) return false
+  if (size.width === 300 && size.height === 150) return false
+  if (typeof window === 'undefined') return true
 
-  return { x: scrollX, y: scrollY }
+  const viewW = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth)
+  const viewH = Math.min(
+    window.innerHeight,
+    document.documentElement.clientHeight || window.innerHeight,
+  )
+  if (viewW > 0 && size.width < viewW * 0.45) return false
+  if (viewH > 0 && size.height < viewH * 0.45) return false
+  return true
 }
 
 export function computeGridLayout(

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { motion } from 'motion/react'
 import type { PanInfo } from 'motion/react'
 import { interactionSettings } from '../config/settings'
@@ -6,6 +6,7 @@ import { interactionSettings } from '../config/settings'
 type DragSurfaceProps = {
   onPan: (event: PointerEvent, info: PanInfo) => void
   onPanEnd: (event: PointerEvent, info: PanInfo) => void
+  onWheel?: (event: WheelEvent) => void
   onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void
   onPointerLeave: () => void
   onTap?: (x: number, y: number, originX: number, originY: number) => void
@@ -32,14 +33,28 @@ const idleGesture = (): Gesture => ({
 export function DragSurface({
   onPan,
   onPanEnd,
+  onWheel,
   onPointerMove,
   onPointerLeave,
   onTap,
   disabled = false,
   overTitle = false,
 }: DragSurfaceProps) {
+  const surfaceRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture>(idleGesture())
   const cooldownUntilRef = useRef(0)
+
+  useEffect(() => {
+    const node = surfaceRef.current
+    if (!node || disabled || !onWheel) return
+
+    const handleWheel = (event: WheelEvent) => {
+      onWheel(event)
+    }
+
+    node.addEventListener('wheel', handleWheel, { passive: false })
+    return () => node.removeEventListener('wheel', handleWheel)
+  }, [disabled, onWheel])
 
   const markPan = () => {
     gestureRef.current.panned = true
@@ -52,6 +67,7 @@ export function DragSurface({
 
   return (
     <motion.div
+      ref={surfaceRef}
       className={`drag-surface${disabled ? ' is-diving' : ''}${overTitle ? ' is-over-title' : ''}`}
       onPan={
         disabled
