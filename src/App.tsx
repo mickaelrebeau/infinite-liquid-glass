@@ -39,7 +39,6 @@ function App() {
   const pointerTilt = usePointerTilt(reducedMotion)
   const [reverseSession, setReverseSession] = useState(initialDive)
   const [loading, setLoading] = useState(!initialDive)
-  const [progress, setProgress] = useState(initialDive ? 100 : 0)
   const [clickRequest, setClickRequest] = useState<PointerClick | null>(null)
   const [diving, setDiving] = useState(Boolean(initialDive))
   const [overTitle, setOverTitle] = useState(false)
@@ -48,19 +47,12 @@ function App() {
   const transitioning = diving || Boolean(reverseSession)
 
   useEffect(() => {
-    if (!loading) return
-
-    let frame = 0
-    const timer = window.setInterval(() => {
-      frame += 1
-      setProgress((value) => Math.min(100, value + 12))
-      if (frame >= 9) {
-        window.clearInterval(timer)
-        setLoading(false)
-      }
-    }, 120)
-
-    return () => window.clearInterval(timer)
+    if (!loading) {
+      unlockProjectVideos()
+      return
+    }
+    const timer = window.setTimeout(() => setLoading(false), 1080)
+    return () => window.clearTimeout(timer)
   }, [loading])
 
   const handleTap = (
@@ -177,7 +169,7 @@ function App() {
       ) : null}
 
       <SiteFooter />
-      <LoadingScreen progress={progress} visible={loading} />
+      <LoadingScreen visible={loading} />
       <Analytics />
     </div>
   )

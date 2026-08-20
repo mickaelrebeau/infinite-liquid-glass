@@ -1,11 +1,27 @@
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 
 type LoadingScreenProps = {
-  progress: number
   visible: boolean
 }
 
-export function LoadingScreen({ progress, visible }: LoadingScreenProps) {
+export function LoadingScreen({ visible }: LoadingScreenProps) {
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    if (!visible) return
+
+    setProgress(0)
+    let frame = 0
+    const timer = window.setInterval(() => {
+      frame += 1
+      setProgress((value) => Math.min(100, value + 12))
+      if (frame >= 9) window.clearInterval(timer)
+    }, 120)
+
+    return () => window.clearInterval(timer)
+  }, [visible])
+
   return (
     <AnimatePresence>
       {visible ? (

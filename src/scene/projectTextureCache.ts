@@ -16,11 +16,13 @@ export type CachedProjectTextures = {
   cover: ReturnType<typeof computeCoverTransform>
   video: HTMLVideoElement | null
   titleHit: TitleHitRect
+  releaseVideo?: () => void
 }
 
 const cache = new Map<number, CachedProjectTextures>()
 let loadPromise: Promise<void> | null = null
 let planeAspectUsed = 1
+let videoHost: HTMLDivElement | null = null
 
 export function preloadProjectTextures(planeAspect: number): Promise<void> {
   planeAspectUsed = planeAspect
@@ -61,9 +63,10 @@ export function preloadProjectTextures(planeAspect: number): Promise<void> {
       }
 
       cache.set(index, entry)
-      attachProjectVideo(project, index, planeAspect)
     }),
-  ).then(() => undefined)
+  ).then(() => {
+    startProjectVideos(planeAspect)
+  })
 
   return loadPromise
 }
@@ -90,16 +93,30 @@ export function unlockProjectVideos() {
 
 export function disposeProjectTextureCache() {
   for (const entry of cache.values()) {
+    entry.releaseVideo?.()
     entry.image.dispose()
     entry.text.dispose()
-    entry.video?.pause()
-    if (entry.video) {
-      entry.video.src = ''
-      entry.video.load()
-    }
   }
   cache.clear()
   loadPromise = null
+
+  if (videoHost) {
+    for (const node of [...videoHost.querySelectorAll('video')]) {
+      releaseVideoElement(node)
+    }
+    videoHost.remove()
+    videoHost = null
+  }
+}
+
+function startProjectVideos(planeAspect: number) {
+  void (async () => {
+    for (let index = 0; index < projects.length; index += 1) {
+      if (!cache.has(index)) return
+      attachProjectVideo(projects[index], index, planeAspect)
+      await wait(90)
+    }
+  })()
 }
 
 function attachProjectVideo(
@@ -107,38 +124,155 @@ function attachProjectVideo(
   index: number,
   planeAspect: number,
 ) {
+  const entry = cache.get(index)
+  if (!entry || entry.video) return
+
   const video = document.createElement('video')
-  video.src = project.video
   video.muted = true
+  video.defaultMuted = true
   video.loop = true
-  video.playsInline = true
   video.autoplay = true
+  video.playsInline = true
   video.preload = 'auto'
   video.crossOrigin = 'anonymous'
+  video.disablePictureInPicture = true
+  video.setAttribute('muted', '')
+  video.setAttribute('playsinline', '')
+  video.setAttribute('webkit-playsinline', '')
+  video.setAttribute('autoplay', '')
+
+  getVideoHost().appendChild(video)
+  video.src = project.video
+
+  let promoted = false
 
   const promote = () => {
-    const entry = cache.get(index)
-    if (!entry || video.videoWidth < 2) return
+    if (promoted) return
+    if (video.videoWidth < 2 || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return
+    }
 
-    const texture = new VideoTexture(video)
-    texture.colorSpace = 'srgb'
-    texture.generateMipmaps = false
-    texture.minFilter = LinearFilter
-    texture.magFilter = LinearFilter
-    texture.wrapS = ClampToEdgeWrapping
-    texture.wrapT = ClampToEdgeWrapping
-    texture.needsUpdate = true
+    const current = cache.get(index)
+    if (!current) return
+    promoted = true
 
-    entry.image = texture
-    entry.video = video
-    entry.cover = computeCoverTransform(
+    const blit = needsCanvasVideoBlit()
+      ? createBlittedVideoTexture(video)
+      : null
+    const texture = blit?.texture ?? createNativeVideoTexture(video)
+
+    current.image = texture
+    current.video = video
+    current.cover = computeCoverTransform(
       video.videoWidth,
       video.videoHeight,
       planeAspect || planeAspectUsed,
     )
+    current.releaseVideo = () => {
+      blit?.stop()
+      releaseVideoElement(video)
+    }
     void video.play().catch(() => {})
   }
 
-  video.addEventListener('loadeddata', promote, { once: true })
+  video.addEventListener('loadedmetadata', promote)
+  video.addEventListener('loadeddata', promote)
+  video.addEventListener('canplay', promote)
+  video.addEventListener('playing', promote)
   video.load()
+}
+
+function createNativeVideoTexture(video: HTMLVideoElement) {
+  const texture = new VideoTexture(video)
+  configureVideoTexture(texture)
+  return texture
+}
+
+function createBlittedVideoTexture(video: HTMLVideoElement) {
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d', {
+    alpha: false,
+    desynchronized: true,
+  })
+
+  if (!ctx) return null
+
+  ctx.drawImage(video, 0, 0)
+  const texture = new CanvasTexture(canvas)
+  configureVideoTexture(texture)
+
+  let stopped = false
+  let frameHandle = 0
+
+  const draw = () => {
+    if (stopped || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    texture.needsUpdate = true
+  }
+
+  const pump = () => {
+    if (stopped) return
+    draw()
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      frameHandle = video.requestVideoFrameCallback(pump)
+    } else {
+      frameHandle = window.requestAnimationFrame(pump)
+    }
+  }
+
+  pump()
+
+  return {
+    texture,
+    stop() {
+      stopped = true
+      if (typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(frameHandle)
+      } else {
+        window.cancelAnimationFrame(frameHandle)
+      }
+    },
+  }
+}
+
+function configureVideoTexture(texture: Texture) {
+  texture.colorSpace = 'srgb'
+  texture.generateMipmaps = false
+  texture.minFilter = LinearFilter
+  texture.magFilter = LinearFilter
+  texture.wrapS = ClampToEdgeWrapping
+  texture.wrapT = ClampToEdgeWrapping
+  texture.needsUpdate = true
+}
+
+function releaseVideoElement(video: HTMLVideoElement) {
+  video.pause()
+  video.removeAttribute('src')
+  video.load()
+  video.remove()
+}
+
+function getVideoHost() {
+  if (videoHost?.isConnected) return videoHost
+
+  videoHost = document.createElement('div')
+  videoHost.id = 'ilg-video-host'
+  videoHost.setAttribute('aria-hidden', 'true')
+  videoHost.style.cssText =
+    'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;'
+  document.body.appendChild(videoHost)
+  return videoHost
+}
+
+function needsCanvasVideoBlit() {
+  // Firefox WebGPU rejects HTMLVideoElement in copyExternalImageToTexture.
+  return /Firefox\/|FxiOS\//i.test(navigator.userAgent)
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
 }

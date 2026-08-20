@@ -5,11 +5,11 @@ import {
   RGBAFormat,
   type Texture,
 } from 'three/webgpu'
-import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
+import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js'
 
 export async function loadEnvironmentMap(): Promise<Texture> {
   try {
-    const loader = new RGBELoader()
+    const loader = new HDRLoader()
     const texture = await loader.loadAsync('/hdri/studio_small_03_1k.hdr')
     texture.mapping = EquirectangularReflectionMapping
     return texture

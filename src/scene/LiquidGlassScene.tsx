@@ -1,8 +1,8 @@
 import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { WebGPURenderer } from 'three/webgpu'
 import type { MotionValue } from 'motion/react'
 import { GlassGrid, type PointerClick } from './GlassGrid'
+import { createWebGPURenderer } from './createWebGPURenderer'
 import type { DragState } from '../hooks/useInfiniteDrag'
 import type { Project } from '../data/projects'
 import type { DivePickMeta, DiveSession } from './diveSession'
@@ -52,15 +52,10 @@ export function LiquidGlassScene({
         far: 9600,
         position: [0, 0, 1200],
       }}
-      gl={async (props) => {
-        const renderer = new WebGPURenderer({
-          canvas: props.canvas as HTMLCanvasElement,
-          antialias: true,
-          alpha: false,
-        })
-        await renderer.init()
-        renderer.setClearColor(0x000008, 1)
-        return renderer
+      gl={createWebGPURenderer}
+      onCreated={({ gl, size }) => {
+        gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+        gl.setSize(size.width, size.height, false)
       }}
     >
       <Suspense fallback={null}>
