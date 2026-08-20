@@ -170,7 +170,11 @@ export function computeGridLayout(
   const viewportScale = Math.max(width, height) / gridSettings.referenceWidth
   const perspective = gridSettings.perspective * viewportScale
   const sphereRadius = gridSettings.sphereRadius * viewportScale
-  const planeWidth = width * gridSettings.planeWidthRatio
+  const planeWidthRatio =
+    height > width
+      ? gridSettings.planeWidthRatioPortrait
+      : gridSettings.planeWidthRatio
+  const planeWidth = width * planeWidthRatio
   const planeHeight = planeWidth / gridSettings.planeAspect
   const cellWidth = planeWidth * (1 + gapRatio)
   const cellHeight = planeHeight * (1 + gapRatio)

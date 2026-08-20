@@ -12,6 +12,7 @@ import {
 } from 'three/webgpu'
 import type { MotionValue } from 'motion/react'
 import { tiltSettings, interactionSettings } from '../config/settings'
+import { shouldBlockScenePointer, useTweakRevision } from '../config/tweakStore'
 import { projects } from '../data/projects'
 import {
   buildGridCells,
@@ -59,6 +60,7 @@ type GlassGridProps = {
   onReverseStart?: () => void
   onReverseComplete?: () => void
   onTitleHover?: (hovered: boolean) => void
+  onClickHandled?: () => void
 }
 
 type DiveState = {
@@ -93,6 +95,7 @@ export function GlassGrid({
   onReverseStart,
   onReverseComplete,
   onTitleHover,
+  onClickHandled,
 }: GlassGridProps) {
   const { size, camera } = useThree()
   const surfaceRigRef = useRef<Group>(null)
@@ -121,12 +124,14 @@ export function GlassGrid({
   const lastViewportKeyRef = useRef('')
   const stableLayoutFramesRef = useRef(0)
   const titleHoverRef = useRef(false)
+  const handledClickIdRef = useRef(-1)
   const [envMap, setEnvMap] = useState<Texture | null>(null)
   const [texturesReady, setTexturesReady] = useState(false)
 
+  const tweakRevision = useTweakRevision()
   const layout = useMemo(
     () => computeGridLayout(size.width, size.height),
-    [size.width, size.height],
+    [size.width, size.height, tweakRevision],
   )
 
   const slotCount = layout.cols * layout.rows
@@ -211,8 +216,31 @@ export function GlassGrid({
   ])
 
   useEffect(() => {
-    if (!clickRequest || diveRef.current || reverseSession) return
-    if (velocityMagnitude.get() > interactionSettings.clickMaxVelocity) return
+    if (!clickRequest) return
+    if (handledClickIdRef.current === clickRequest.id) return
+
+    const consumeClick = () => {
+      handledClickIdRef.current = clickRequest.id
+      onClickHandled?.()
+    }
+
+    if (diveRef.current || reverseSession) {
+      consumeClick()
+      return
+    }
+    if (
+      shouldBlockScenePointer({
+        clientX: clickRequest.x,
+        clientY: clickRequest.y,
+      })
+    ) {
+      consumeClick()
+      return
+    }
+    if (velocityMagnitude.get() > interactionSettings.clickMaxVelocity) {
+      consumeClick()
+      return
+    }
 
     const originHit = hitTitleAt(
       clickRequest.originX,
@@ -235,6 +263,7 @@ export function GlassGrid({
       originHit.projectIndex !== endHit.projectIndex ||
       originHit.slotIndex !== endHit.slotIndex
     ) {
+      consumeClick()
       return
     }
 
@@ -266,6 +295,7 @@ export function GlassGrid({
 
     if (reducedMotion) {
       onDiveComplete?.(project)
+      consumeClick()
       return
     }
 
@@ -288,7 +318,8 @@ export function GlassGrid({
       direction: 1,
     }
     completedRef.current = false
-  }, [clickRequest, camera, layout, offsetX, offsetY, onDiveComplete, onProjectPick, reducedMotion, reverseSession, size, velocityMagnitude])
+    consumeClick()
+  }, [clickRequest, camera, layout, offsetX, offsetY, onClickHandled, onDiveComplete, onProjectPick, reducedMotion, reverseSession, size, velocityMagnitude])
 
   const applyRestoredScroll = () => {
     if (!reverseSession) return
@@ -673,7 +704,6 @@ export function GlassGrid({
               projectIndexRef={projectIndexRef}
               infiniteColRef={infiniteColRef}
               infiniteRowRef={infiniteRowRef}
-              visualScaleRef={visualScaleRef}
               texturesReady={texturesReady}
             />
           ))}

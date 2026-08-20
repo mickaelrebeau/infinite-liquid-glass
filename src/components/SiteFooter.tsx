@@ -7,8 +7,8 @@ export function SiteFooter() {
         rel="noreferrer"
         className="site-footer__brand"
       >
-        <span>An experiment by</span>
-        <strong>Mike_Dreeman</strong>
+        <span className="site-footer__brand-label">An experiment by</span>
+        <strong className="site-footer__brand-name">Mike_Dreeman</strong>
       </a>
       <a
         href="https://infinite-liquid-glass.shader.se/?v=2"
@@ -16,7 +16,7 @@ export function SiteFooter() {
         rel="noreferrer"
         className="site-footer__cta"
       >
-        See Orginal <span aria-hidden>↗</span>
+        See Original <span aria-hidden>↗</span>
       </a>
     </footer>
   )

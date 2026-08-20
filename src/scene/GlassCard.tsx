@@ -8,11 +8,12 @@ import {
 import { useFrame } from '@react-three/fiber'
 import {
   CanvasTexture,
+  Color,
   PlaneGeometry,
   type Group,
   type Texture,
 } from 'three/webgpu'
-import { glassSettings } from '../config/settings'
+import { glassSettings, GLASS_SHADER_REVISION } from '../config/settings'
 import {
   createCardTextMaterial,
   type CardTextUniforms,
@@ -33,7 +34,6 @@ type GlassCardProps = {
   projectIndexRef: React.RefObject<number[]>
   infiniteColRef: React.RefObject<number[]>
   infiniteRowRef: React.RefObject<number[]>
-  visualScaleRef: React.RefObject<number[]>
   texturesReady: boolean
 }
 
@@ -49,7 +49,6 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
     projectIndexRef,
     infiniteColRef,
     infiniteRowRef,
-    visualScaleRef,
     texturesReady,
   },
   ref,
@@ -63,7 +62,7 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
 
   useImperativeHandle(ref, () => groupRef.current as Group)
 
-  const geometry = useMemo(() => new PlaneGeometry(1, 1), [])
+  const geometry = useMemo(() => new PlaneGeometry(1, 1, 16, 12), [])
 
   const placeholderTexture = useMemo(() => {
     const canvas = document.createElement('canvas')
@@ -83,7 +82,7 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
 
   const { material: glassMaterial, uniforms: glassUniforms } = useMemo(
     () => createLiquidGlassMaterial(placeholderTexture, envMap),
-    [envMap, placeholderTexture],
+    [envMap, placeholderTexture, GLASS_SHADER_REVISION],
   )
 
   const { material: textMaterial, uniforms: textUniforms } = useMemo(
@@ -164,16 +163,29 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
       }
     }
 
-    const visualScale = visualScaleRef.current?.[slotIndex] ?? 1
-    const planeWidth = layout.planeWidth * visualScale
-    const planeHeight = layout.planeHeight * visualScale
+    const planeWidth = layout.planeWidth
+    const planeHeight = layout.planeHeight
 
     glass.planeSize.value.set(planeWidth, planeHeight)
     glass.sphereRadius.value = layout.sphereRadius
     glass.cornerRadius.value = glassSettings.cornerRadius * planeWidth
     glass.bevelWidth.value = glassSettings.bevelWidth * planeWidth
-    glass.thickness.value = glassSettings.thickness * layout.cardScale * visualScale
-    glass.rimWidth.value = glassSettings.rimWidth * layout.cardScale * visualScale
+    glass.bevelPower.value = glassSettings.bevelPower
+    glass.bevelMaxSlope.value = glassSettings.bevelMaxSlope
+    glass.thickness.value = glassSettings.thickness * layout.cardScale
+    glass.ior.value = glassSettings.ior
+    glass.refractStrength.value = glassSettings.refractStrength
+    glass.dispersion.value = glassSettings.dispersion
+    glass.fresnelF0.value = glassSettings.fresnelF0
+    glass.envIntensity.value = glassSettings.envIntensity
+    glass.envMaxMix.value = glassSettings.envMaxMix
+    glass.envRotation.value = glassSettings.envRotation
+    glass.envRotationX.value = glassSettings.envRotationX
+    glass.rimWidth.value = glassSettings.rimWidth * layout.cardScale
+    glass.rimIntensity.value = glassSettings.rimIntensity
+    applyColor(glass.rimColor.value, glassSettings.rimColor)
+    applyColor(glass.rimColorTop.value, glassSettings.rimColorTop)
+    applyColor(glass.tint.value, glassSettings.tint)
 
     text.planeSize.value.set(planeWidth, planeHeight)
     text.cornerRadius.value = glassSettings.cornerRadius * planeWidth
@@ -203,3 +215,15 @@ export const GlassCard = forwardRef<Group, GlassCardProps>(function GlassCard(
     </group>
   )
 })
+
+function applyColor(
+  target: Color,
+  value: string | { r: number; g: number; b: number },
+) {
+  if (typeof value === 'string') {
+    target.set(value)
+    return
+  }
+  const scale = value.r > 1 || value.g > 1 || value.b > 1 ? 1 / 255 : 1
+  target.setRGB(value.r * scale, value.g * scale, value.b * scale)
+}

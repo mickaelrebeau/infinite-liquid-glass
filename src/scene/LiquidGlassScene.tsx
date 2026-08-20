@@ -23,6 +23,7 @@ type LiquidGlassSceneProps = Pick<
   onReverseStart?: () => void
   onReverseComplete?: () => void
   onTitleHover?: (hovered: boolean) => void
+  onClickHandled?: () => void
 }
 
 export function LiquidGlassScene({
@@ -41,6 +42,7 @@ export function LiquidGlassScene({
   onReverseStart,
   onReverseComplete,
   onTitleHover,
+  onClickHandled,
 }: LiquidGlassSceneProps) {
   return (
     <Canvas
@@ -75,6 +77,7 @@ export function LiquidGlassScene({
           onReverseStart={onReverseStart}
           onReverseComplete={onReverseComplete}
           onTitleHover={onTitleHover}
+          onClickHandled={onClickHandled}
         />
       </Suspense>
     </Canvas>

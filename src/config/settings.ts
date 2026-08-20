@@ -1,41 +1,42 @@
-export const glassSettings = {
+export const GLASS_SHADER_REVISION = 11
+
+export const defaultGlassSettings = {
   cornerRadius: 0.163,
-  bevelWidth: 0.12,
-  bevelPower: 2.5,
-  bevelMaxSlope: 1.45,
-  thickness: 120,
+  bevelWidth: 0.192,
+  bevelPower: 3.9,
+  bevelMaxSlope: 1.74,
+  thickness: 155,
   ior: 2.3,
   roughness: 0,
-  refractStrength: 0.52,
-  dispersion: 0.24,
+  refractStrength: 0.7,
+  dispersion: 0.32,
   dispersionSamples: 5,
   fresnelF0: 0.045,
-  envIntensity: 1.45,
-  envMaxMix: 0.16,
+  envIntensity: 1.93,
+  envMaxMix: 0.27,
   envRotation: -2,
   envRotationX: 0,
-  rimWidth: 6,
-  rimIntensity: 0.07,
+  rimWidth: 10,
+  rimIntensity: 0.11,
   rimColor: '#ffffff',
   rimColorTop: '#ffffff',
   tint: '#ffffff',
-  glassEdgeStart: 0.78,
-  glassEdgeEnd: 1,
 } as const
 
-export const gridSettings = {
+export const defaultGridSettings = {
   perspective: 1200,
   sphereRadius: 5000,
   planeAspect: 4 / 3,
-  planeWidthRatio: 0.318,
-  gapRatio: 0.048,
+  planeWidthRatio: 0.38,
+  planeWidthRatioPortrait: 0.72,
+  gapRatio: 0.045,
   referenceWidth: 1728,
-  coverageMargin: 1.12,
+  coverageMargin: 1.15,
   minCols: 4,
   maxCols: 16,
   minRows: 4,
   maxRows: 16,
-  edgeScaleFalloff: 0.18,
+  edgeScaleFalloff: 0,
   edgeScalePower: 1.65,
 } as const
 
@@ -64,7 +65,7 @@ export const dragSettings = {
   },
 } as const
 
-export const tiltSettings = {
+export const defaultTiltSettings = {
   maxPitch: 0.06,
   maxYaw: 0.06,
   smoothing: 0.12,
@@ -74,3 +75,10 @@ export const tiltSettings = {
     mass: 0.55,
   },
 } as const
+
+export const glassSettings = { ...defaultGlassSettings }
+export const gridSettings = { ...defaultGridSettings }
+export const tiltSettings = {
+  ...defaultTiltSettings,
+  pointerSpring: { ...defaultTiltSettings.pointerSpring },
+}

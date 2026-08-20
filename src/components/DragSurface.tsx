@@ -2,6 +2,11 @@ import { useEffect, useRef } from 'react'
 import { motion } from 'motion/react'
 import type { PanInfo } from 'motion/react'
 import { interactionSettings } from '../config/settings'
+import {
+  isPointOverTweakPane,
+  isTweakPaneEventTarget,
+  shouldBlockScenePointer,
+} from '../config/tweakStore'
 
 type DragSurfaceProps = {
   onPan: (event: PointerEvent, info: PanInfo) => void
@@ -73,6 +78,7 @@ export function DragSurface({
         disabled
           ? undefined
           : (event, info) => {
+              if (shouldBlockScenePointer(event)) return
               markPan()
               onPan(event, info)
             }
@@ -81,6 +87,7 @@ export function DragSurface({
         disabled
           ? undefined
           : (event, info) => {
+              if (shouldBlockScenePointer(event)) return
               markPan()
               beginCooldown()
               onPanEnd(event, info)
@@ -90,6 +97,12 @@ export function DragSurface({
         disabled
           ? undefined
           : (event) => {
+              if (
+                isTweakPaneEventTarget(event.target) ||
+                shouldBlockScenePointer(event.nativeEvent)
+              ) {
+                return
+              }
               event.currentTarget.setPointerCapture(event.pointerId)
               gestureRef.current = {
                 pointerId: event.pointerId,
@@ -131,6 +144,13 @@ export function DragSurface({
               if (performance.now() < cooldownUntilRef.current) return
               if (gesture.panned) return
               if (gesture.moved > interactionSettings.tapMaxDistance) return
+              if (shouldBlockScenePointer(event.nativeEvent)) return
+              if (
+                isPointOverTweakPane(gesture.startX, gesture.startY) ||
+                isPointOverTweakPane(event.clientX, event.clientY)
+              ) {
+                return
+              }
 
               onTap?.(
                 event.clientX,

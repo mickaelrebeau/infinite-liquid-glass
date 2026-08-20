@@ -25,10 +25,35 @@ import {
 } from './scene/diveSession'
 import type { PointerClick } from './scene/GlassGrid'
 import { projects, type Project } from './data/projects'
+import { TweakPane } from './components/TweakPane'
+import { shouldBlockScenePointer } from './config/tweakStore'
+import { LiquidGlassDemoScene } from './demo/LiquidGlassDemoScene'
+
+function LiquidGlassDemoApp() {
+  const webgpuSupported = useWebGPUSupport()
+
+  if (webgpuSupported === false) {
+    return <StaticFallback />
+  }
+
+  if (webgpuSupported !== true) {
+    return null
+  }
+
+  return (
+    <div className="app-shell">
+      <LiquidGlassDemoScene />
+    </div>
+  )
+}
 
 const initialDive = readDiveSession()
+const isLiquidGlassDemo = new URLSearchParams(window.location.search).get('demo') === 'liquid-glass'
 
 function App() {
+  if (isLiquidGlassDemo) {
+    return <LiquidGlassDemoApp />
+  }
   const webgpuSupported = useWebGPUSupport()
   const reducedMotion = usePrefersReducedMotion()
   const drag = useInfiniteDrag(
@@ -56,16 +81,24 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [loading])
 
-  const handleTap = (
-    x: number,
-    y: number,
-    originX: number,
-    originY: number,
-  ) => {
-    if (transitioning) return
-    unlockProjectVideos()
-    setClickRequest({ id: Date.now(), x, y, originX, originY })
-  }
+  const handleTap = useCallback(
+    (x: number, y: number, originX: number, originY: number) => {
+      if (transitioning) return
+      if (
+        shouldBlockScenePointer({ clientX: x, clientY: y }) ||
+        shouldBlockScenePointer({ clientX: originX, clientY: originY })
+      ) {
+        return
+      }
+      unlockProjectVideos()
+      setClickRequest({ id: Date.now(), x, y, originX, originY })
+    },
+    [transitioning],
+  )
+
+  const handleClickHandled = useCallback(() => {
+    setClickRequest(null)
+  }, [])
 
   const handleWheel = useCallback(
     (event: WheelEvent) => {
@@ -152,6 +185,7 @@ function App() {
             onReverseStart={handleReverseStart}
             onReverseComplete={handleReverseComplete}
             onTitleHover={setOverTitle}
+            onClickHandled={handleClickHandled}
           />
           <DragSurface
             overTitle={overTitle}
@@ -180,6 +214,7 @@ function App() {
 
       <SiteFooter />
       <LoadingScreen visible={loading} />
+      <TweakPane />
       <Analytics />
       <SpeedInsights />
     </div>
